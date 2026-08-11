@@ -6,7 +6,35 @@
 //= Each companion is stored in an array slot (0..2).
 //= Tune stat formulas inside OnScale / OnScaleFull.
 //=============================================================
+//= โครงสร้าง label หลัก ๆ:
+//=   OnHireMenu      - เมนูจ้าง companion ใหม่ (เลือกสายอาชีพ 12 แบบ)
+//=   OnRelease       - ปลด companion และคืนอุปกรณ์
+//=   OnStatus        - ดูสถานะ (เลเวล / EXP / Alive)
+//=   OnPickSlot      - เลือกว่าจะจัดการช่องไหน (subroutine)
+//=   OnSummon        - เรียก companion ออกมาสู่แผนที่
+//=   OnScale         - คำนวณสเตตตามเลเวล (รวมบัฟจากอุปกรณ์)
+//=   OnScaleFull     - ตั้งค่าเต็มตัว (สไปรต์, HP, โหมด AI)
+//=   OnCompanionTick - ตัวจับเวลา 5 วิ: ตามผู้เล่น / ฟื้นคืนชีพ / ให้บัฟ
+//=   OnCompanionDead - เหตุการณ์เมื่อ companion ตาย
+//=   OnCompanionBuff - ให้บัฟประจำสายอาชีพ (self + ผู้เล่น)
+//=   OnNPCKillEvent  - เมื่อ companion ฆ่ามอนสเตอร์: เก็บ EXP
+//=   OnVacuumLoot    - ดูดของดรอปมาให้ผู้เล่น
+//=   OnNextExp       - คำนวณ EXP ถึงเลเวลถัดไป
+//=   OnLevelUp       - เมื่อเลเวลอัป: ประกาศ + คำนวณสเตตใหม่
+//=   OnEquipMenu     - เมนูใส่อุปกรณ์ (อาวุธ โล่ หัว เกราะ) + ปรับสเตต
+//=   OnStatMenu      - ปรับสเตต (18 ค่า, 5 แต้ม/ครั้ง)
+//=   OnEquipSlot     - เลือกไอเทมจากกระเป๋ามาใส่
+//=   OnUnequipMenu   - ถอดอุปกรณ์คืนผู้เล่น
+//=   OnViewEquip     - ดูอุปกรณ์ที่สวมอยู่
+//=   OnEquipRefresh  - รีเฟรชสไปรต์/สเตตหลังใส่อุปกรณ์
+//=   OnPCLoginEvent  - เมื่อผู้เล่น login: เรียก companion กลับมา
+//=   OnPCDieEvent    - เมื่อผู้เล่นตาย: priest companion ปลุกให้
+//=============================================================
 
+//=== ตัวสคริปต์หลัก (ตอนเปิดเมนู) =============================
+// เป็นเมนูแรกของ NPC AI Companion ที่ Prontera 156,193
+// มี 4 ตัวเลือก: จ้าง / ปลด / ดูสถานะ / ใส่อุปกรณ์
+// (ถ้าเปิดผ่าน @companion จากระยะไกลจะทำงานเหมือนกัน)
 prontera,156,193,5	script	AI Companion	123,{
 	mes "[AI Companion]";
 	mes "Greetings, adventurer.";
@@ -32,6 +60,11 @@ prontera,156,193,5	script	AI Companion	123,{
 		close;
 	}
 
+//=== OnHireMenu: เมนูจ้าง companion ============================
+// 1) นับจำนวน companion ที่มีอยู่ (0..2) ถ้าครบ 3 ให้บอกผู้เล่น
+// 2) ให้เลือกสายอาชีพ 12 แบบ (แต่ละแบบมีสเตต/บัฟต่างกัน)
+// 3) บันทึกข้อมูลลงตัวแปรถาวร #COMPANION_* แล้วเรียก OnSummon
+// 4) ถ้าเรียกไม่สำเร็จ (summon ได้ 0) ให้ลบข้อมูลและบอกผู้เล่น
 OnHireMenu:
 	set .@slots, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1)
@@ -131,6 +164,9 @@ OnHireMenu:
 	addtimer 5000, "AI Companion::OnCompanionTick";
 	close;
 
+//=== OnRelease: ปลด companion ==================================
+// 1) เลือกช่องที่จะปลด (OnPickSlot) 2) ฆ่ามอนสเตอร์ (unitkill)
+// 3) ล้างข้อมูลถาวรทั้งหมดในช่องนั้น 4) คืนอุปกรณ์ 4 ช่องเข้าสินค้า
 OnRelease:
 	callsub OnPickSlot;
 	if (@pick_slot < 0)
@@ -164,6 +200,9 @@ OnRelease:
 	mes "Farewell, and stay safe!";
 	close;
 
+//=== OnStatus: ตรวจสอบสถานะ companion =========================
+// วนลูป 3 ช่อง แสดง ชื่อ, เลเวล (สูงสุด 999), EXP ถึงเลเวลถัดไป,
+// และสถานะ Alive (ยังอยู่ / กำลังฟื้นคืนชีพ)
 OnStatus:
 	set .@cnt, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
@@ -193,6 +232,10 @@ OnStatus:
 	}
 	close;
 
+//=== OnPickSlot: เลือกช่อง companion ==========================
+// subroutine ย่อย: ให้ผู้เล่นเลือกว่าจะจัดการ companion ตัวไหน (จากช่อง 0..2)
+// ถ้ามีตัวเดียวเลือกให้เลย ถ้าไม่มีเลยคืนค่า @pick_slot = -1
+// ใช้ร่วมกับ OnRelease / OnEquipMenu
 OnPickSlot:
 	set .@menu$, "";
 	set .@cnt, 0;
@@ -227,6 +270,9 @@ OnPickSlot:
 	set @pick_slot, .@slot[.@sel];
 	return;
 
+//=== OnSummon: เรียก companion ออกมา ===========================
+// ใช้คำสั่ง summon สร้างมอนสเตอร์ (ตัว companion) ตามคลาสที่บันทึกไว้
+// แล้วจด GID ลงตัวแปรถาวร; ถ้า summon ไม่สำเร็จจะได้ 0 และจบงาน
 OnSummon:
 	set .@idx, getarg(0);
 	set @gid, summon(#COMPANION_NAME$[.@idx], #COMPANION_CLASS[.@idx], 2147483647, "AI Companion::OnCompanionDead");
@@ -236,6 +282,10 @@ OnSummon:
 	callsub OnScaleFull, .@idx;
 	return;
 
+//=== OnScale: คำนวณสเตตของ companion ตามเลเวล =================
+// ตั้งค่า STR/AGI/VIT/INT/DEX/LUK, ATK, MATK, DEF, MDEF, HIT, FLEE, CRIT
+// ตามสูตรเลเวล + บัฟประจำสายอาชีพ + ค่าที่ผู้เล่นปรับ (COMPANION_BS)
+// แล้วบวกค่าอุปกรณ์ (อาวุธ/โล่/หัว/เกราะ) ที่สวมใส่
 OnScale:
 	set .@idx, getarg(0);
 	if (#COMPANION_LEVEL[#COMPANION_CLASS[.@idx]] < 1)
@@ -395,6 +445,10 @@ OnScale:
 		setunitdata(@gid, UMOB_CRIT, #COMPANION_BS[.@idx * 20 + 14] + 1 * (@lvl - #COMPANION_BSLV[.@idx * 20 + 14]));
 	return;
 
+//=== OnScaleFull: ตั้งค่าเต็มตัวให้ companion ===================
+// เรียก OnScale ก่อน แล้วตั้งค่า ลักษณะภายนอก (สไปรต์/อาวุธ/โล่/หัว),
+// โหมด AI (โจมตีอัตโนมัติ), เผ่าพันธุ์, สปีด และ MAXHP/HP ตามสายอาชีพ
+// (tank สาย 1799/3226/3227 จะ HP เยอะที่สุด)
 OnScaleFull:
 	set .@idx, getarg(0);
 	set @gid, #COMPANION_GID[.@idx];
@@ -446,6 +500,12 @@ OnScaleFull:
 		setunitdata(@gid, UMOB_CRIT, #COMPANION_BS[.@idx * 20 + 14] + 1 * (@lvl - #COMPANION_BSLV[.@idx * 20 + 14]));
 	return;
 
+//=== OnCompanionTick: ตัวจับเวลา 5 วินาที =======================
+// ทำงานทุก 5 วิ (เรียกซ้ำด้วย addtimer) สำหรับ companion ที่ยังมี:
+//  - ถ้า companion ยังอยู่และเป็นของเรา: คำนวณสเตตใหม่, ให้บัฟ, 
+//    และวาร์ปตามผู้เล่นถ้าอยู่ไกล (>15 ช่อง) หรือคนละแผนที่
+//  - ถ้า companion ตาย: ตั้งเวลา DEAD_TICK และฟื้นคืนชีพอัตโนมัติ
+//    หลัง 10 วิ (รอ cooldown) ด้วย OnSummon
 OnCompanionTick:
 	set @has_any, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
@@ -503,9 +563,17 @@ OnCompanionTick:
 		addtimer 5000, "AI Companion::OnCompanionTick";
 	end;
 
+//=== OnCompanionDead: เหตุการณ์ตอน companion ตาย ===============
+// ถูกเรียกผ่าน event ของ summon เมื่อ companion ถูกฆ่า
+// งานที่ต้องทำ (บันทึกเวลา, ฟื้นคืนชีพ) อยู่ใน OnCompanionTick
+// จึงจบที่ตรงนี้เท่านั้น
 OnCompanionDead:
 	end;
 
+//=== OnCompanionBuff: ให้บัฟประจำสายอาชีพ ======================
+// รับพารามิเตอร์: คลาส companion + GID
+// จับคู่สายอาชีพ -> บัฟ 2 ตัว: 1) ใส่ให้ตัวเอง (self) 2) ใส่ให้ผู้เล่น (mast)
+// เช่น 1799=Assumptio ตัว+นาย, 1800=Kyrie+AGI, 1639=Energycoat+Magnificat
 OnCompanionBuff:
 	set .@cls, getarg(0);
 	set .@gid, getarg(1);
@@ -595,6 +663,12 @@ OnCompanionBuff:
 		sc_start .@mast_sc, 60000, .@mast_val, 10000, 0;
 	return;
 
+//=== OnNPCKillEvent: เมื่อ companion ฆ่ามอนสเตอร์ ================
+// event ติดตั้งที่ NPC นี้ (เรียกเมื่อ kill); ตรวจหา companion ที่
+// เป็นตัวสังหาร (killerrid == #COMPANION_GID) แล้ว:
+//  - รับ EXP = เลเวลมอนสเตอร์ x 15 + 50 เก็บลง #COMPANION_EXP
+//  - วนอัปเลเวลถ้า EXP เต็ม (สูงสุด 999) และเรียก OnLevelUp
+//  - สุดท้ายดูดของที่ดรอปมาให้ผู้เล่น (OnVacuumLoot)
 OnNPCKillEvent:
 	set @comp_killed, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
@@ -634,6 +708,9 @@ OnNPCKillEvent:
 		callsub OnVacuumLoot, @kill_x, @kill_y;
 	end;
 
+//=== OnVacuumLoot: ดูดของที่ดรอปมาให้ผู้เล่น =====================
+// scan หาไอเทม (BL_ITEM) บนแผนที่รอบจุดที่ companion ฆ่ามอนสเตอร์
+// (ระยะ <= 5 ช่อง) แล้ววาร์ปทั้งหมดมาไว้ที่ตัวผู้เล่น
 OnVacuumLoot:
 	set .@kx, getarg(0);
 	set .@ky, getarg(1);
@@ -653,6 +730,10 @@ OnVacuumLoot:
 	}
 	return;
 
+//=== OnNextExp: คำนวณ EXP ที่ต้องใช้ถึงเลเวลถัดไป ================
+// subroutine ย่อย คืนค่า @next_exp จากเลเวลปัจจุบัน:
+//  - เลเวลต่ำกว่า BaseLevel: ใช้สูตรของเซิร์ฟเวอร์ (getbaseexp_ratio)
+//  - เลเวลสูงกว่านั้น: ใช้สูตรเอง lvl^2*5 + lvl*100 (เร่งจบ 999)
 OnNextExp:
 	set .@lvl, getarg(0);
 	if (.@lvl <= BaseLevel)
@@ -661,12 +742,21 @@ OnNextExp:
 		set @next_exp, .@lvl * .@lvl * 5 + .@lvl * 100;
 	return;
 
+//=== OnLevelUp: เมื่อ companion เลเวลอัป =========================
+// แจ้งผู้เล่นด้วย dispbottom ว่า companion อัปเลเวล แล้วคำนวณ
+// สเตต/HP ใหม่ทั้งชุด (OnScaleFull) ให้ค่าต่างๆ ตามเลเวลใหม่ทันที
 OnLevelUp:
 	set .@idx, getarg(0);
 	dispbottom "Your AI companion " + #COMPANION_NAME$[.@idx] + " reached level " + #COMPANION_LEVEL[#COMPANION_CLASS[.@idx]] + "!";
 	callsub OnScaleFull, .@idx;
 	return;
 
+//=== OnEquipMenu: เมนูจัดการอุปกรณ์ของ companion =================
+// เลือก companion ก่อน (OnPickSlot) แล้วให้เลือก:
+//  1-4) ใส่ Weapon/Shield/Headgear/Armor (OnEquipSlot)
+//  5)   ถอดอุปกรณ์คืนผู้เล่น (OnUnequipMenu)
+//  6)   ดูอุปกรณ์ที่สวมอยู่ (OnViewEquip)
+//  7)   ปรับสเตต (OnStatMenu)
 OnEquipMenu:
 	callsub OnPickSlot;
 	if (@pick_slot < 0)
@@ -700,6 +790,11 @@ OnEquipMenu:
 		close;
 	}
 
+//=== OnStatMenu: ปรับสเตตของ companion ==========================
+// สร้างเมนู 18 สเตต (STR..MRES) แสดงค่าปัจจุบัน (รวมสูตรตามเลเวล)
+// ให้ผู้เล่นเลือกเพิ่มสเตต 5 แต้ม/ครั้ง (ดู @bs_name$[1..18])
+// หรือ Reset all stats; เก็บค่าลง #COMPANION_BS แล้วเรียก OnScale
+// เพื่ออัปเดตสเตตจริงบนตัว companion ทันที
 OnStatMenu:
 	set .@idx, getarg(0);
 	set @bs_name$[1], "STR";
@@ -789,6 +884,11 @@ OnStatMenu:
 		mes @bs_name$[.@sel] + " reset to default.";
 	close;
 
+//=== OnEquipSlot: ใส่ไอเทมให้ companion ==========================
+// รับพารามิเตอร์: .@idx (ช่อง) + .@slot (1=อาวุธ 2=โล่ 3=หัว 4=เกราะ)
+// กรองไอเทมในกระเป๋าผู้เล่นให้ถูกชนิด/ตำแหน่ง (IT_WEAPON / EQP_*)
+// แสดงเมนูให้เลือก; ถ้าแทนของเก่าคืนของเก่าให้ผู้เล่นก่อน (getitem)
+// แล้ว delitem ของใหม่ เก็บ ID ลงตัวแปรถาวร และรีเฟรชสไปรต์
 OnEquipSlot:
 	set .@idx, getarg(0);
 	set .@slot, getarg(1);
@@ -850,6 +950,10 @@ OnEquipSlot:
 	mes getitemname(.@item) + "!";
 	close;
 
+//=== OnUnequipMenu: ถอดอุปกรณ์คืนผู้เล่น ==========================
+// สร้างเมนูจากของที่ companion สวมอยู่ (อาวุธ/โล่/หัว/เกราะ)
+// ให้ผู้เล่นเลือกอันที่อยากถอด; คืนไอเทมเข้าสินค้า (getitem),
+// ล้างค่า slot นั้น แล้วรีเฟรชสไปรต์ให้อัปเดตทันที
 OnUnequipMenu:
 	set .@idx, getarg(0);
 	set .@menu$, "";
@@ -903,6 +1007,9 @@ OnUnequipMenu:
 	mes "inventory.";
 	close;
 
+//=== OnViewEquip: ดูอุปกรณ์ที่สวมอยู่ =============================
+// แสดงรายการอาวุธ/โล่/หัว/เกราะที่ companion ใส่อยู่
+// (ถ้าช่องไหนว่างแสดง "-")
 OnViewEquip:
 	set .@idx, getarg(0);
 	mes "[AI Companion]";
@@ -913,6 +1020,9 @@ OnViewEquip:
 	mes "Armor    : " + (#COMPANION_ARMOR[.@idx] ? getitemname(#COMPANION_ARMOR[.@idx]) : "-");
 	close;
 
+//=== OnEquipRefresh: รีเฟรชสไปรต์/สเตตหลังใส่อุปกรณ์ ============
+// ตรวจว่าการ์ดยังอยู่และเป็นของเราก่อน; ถ้าอยู่ เรียก OnScaleFull
+// เพื่อให้ภาพอุปกรณ์ + สเตตใหม่ (จากไอเทมใหม่) ลงบนตัวทันที
 OnEquipRefresh:
 	set .@idx, getarg(0);
 	if (!#COMPANION_GID[.@idx])
@@ -926,6 +1036,9 @@ OnEquipRefresh:
 	callsub OnScaleFull, .@idx;
 	return;
 
+//=== OnPCLoginEvent: เมื่อผู้เล่น login ============================
+// เรียก companion ทั้ง 3 ช่องกลับมาที่แผนที่ปัจจุบัน (ล้าง GID เก่า
+// แล้ว OnSummon ใหม่) และเริ่มตัวจับเวลา 5 วิ (OnCompanionTick)
 OnPCLoginEvent:
 	set @has_any, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
@@ -940,6 +1053,10 @@ OnPCLoginEvent:
 		addtimer 5000, "AI Companion::OnCompanionTick";
 	end;
 
+//=== OnPCDieEvent: เมื่อผู้เล่นตาย ================================
+// ถ้ามี priest companion (คลาส 1658/1637) อยู่ จะปลุกผู้เล่นด้วย
+// recovery + เอฟเฟกต์ Resurrection; มี cooldown 60 วิ (RES_TICK)
+// เพื่อกันใช้ซ้ำถี่เกินไป
 OnPCDieEvent:
 	set .@priest, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
