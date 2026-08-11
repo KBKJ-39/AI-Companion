@@ -1,0 +1,58 @@
+diff --git a/conf/atcommands.yml b/conf/atcommands.yml
+index 9ff52bb..6c7719d 100644
+--- a/conf/atcommands.yml
++++ b/conf/atcommands.yml
+@@ -556,6 +556,11 @@ Body:
+     Help: |
+       Params: <command>
+       Shows help for specified command.
++  - Command: companion
++    Aliases:
++      - cp
++    Help: |
++      Opens the AI Companion menu (hire, release, check, equip your AI companions).
+   - Command: hide
+     Help: |
+       Makes you character invisible (GM invisibility). Type again to become visible.
+diff --git a/src/map/atcommand.cpp b/src/map/atcommand.cpp
+index f367e9b..dcfff78 100644
+--- a/src/map/atcommand.cpp
++++ b/src/map/atcommand.cpp
+@@ -1856,6 +1856,29 @@ ACMD_FUNC(help){
+ 	return 0;
+ }
+ 
++/*==========================================
++ * @companion
++ *------------------------------------------*/
++ACMD_FUNC(companion){
++	nullpo_retr(-1, sd);
++
++	if (sd->npc_id != 0) {
++		clif_displaymessage(fd, "Please close the current window first before using this command.");
++		return -1;
++	}
++
++	npc_data* nd = npc_name2id("AI Companion");
++	if (nd == nullptr || nd->subtype != NPCTYPE_SCRIPT) {
++		clif_displaymessage(fd, "The AI Companion NPC could not be found.");
++		return -1;
++	}
++
++	// Run the dialog through the fake NPC so it works from any distance
++	// (npc_scriptcont skips the npc_checknear test for fake NPCs).
++	run_script(nd->u.scr.script, 0, sd->id, fake_nd->id);
++	return 0;
++}
++
+ /*==========================================
+  *
+  *------------------------------------------*/
+@@ -11539,6 +11562,7 @@ void atcommand_basecommands(void) {
+ 		ACMD_DEF(baselevelup),
+ 		ACMD_DEF(joblevelup),
+ 		ACMD_DEF(help),
++		ACMD_DEF(companion),
+ 		ACMD_DEF(pvpoff),
+ 		ACMD_DEF(pvpon),
+ 		ACMD_DEF(gvgoff),

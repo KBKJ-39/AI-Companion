@@ -1,0 +1,16 @@
+diff --git a/conf/atcommands.yml b/conf/atcommands.yml
+index 9ff52bb..6c7719d 100644
+--- a/conf/atcommands.yml
++++ b/conf/atcommands.yml
+@@ -556,6 +556,11 @@ Body:
+     Help: |
+       Params: <command>
+       Shows help for specified command.
++  - Command: companion
++    Aliases:
++      - cp
++    Help: |
++      Opens the AI Companion menu (hire, release, check, equip your AI companions).
+   - Command: hide
+     Help: |
+       Makes you character invisible (GM invisibility). Type again to become visible.
