@@ -6,7 +6,7 @@
 //= Each companion is stored in an array slot (0..2).
 //= Tune stat formulas inside OnScale / OnScaleFull.
 //=============================================================
-//= Version: 1.7
+//= Version: 1.8
 //= Changelog:
 //=   v1.0 - ระบบพื้นฐาน (จ้าง/ปลด, อุปกรณ์, สเตต 18 ค่า, EXP/เลเวล,
 //=          ติดตามผู้เล่น, ฟื้นคืนชีพ, บัฟสายอาชีพ, vacuum loot, ปลุกเมื่อตาย)
@@ -21,6 +21,12 @@
 //=          (getareaunits) แทนสแกนทั้งแผนที่
 //=          - OnCompanionSkill: หาเป้าจาก mob ระยะ 9 ช่องรอบผู้เล่น
 //=          - OnVacuumLoot: ดูดของจากไอเทมระยะ 6 ช่องรอบจุดสังหาร
+//=   v1.8 - เก็บข้อมูล companion ลง MySQL (ตาราง companion_db)
+//=          ใช้ query_sql อ่าน/เขียนแบบ player
+//=          - OnCompLoad: โหลดตอน login (รองรับ migrate ผู้เล่นเก่า)
+//=          - OnCompSave: บันทึกทุกจุดเปลี่ยน (จ้าง/ปลด/อัปเลเวล/
+//=            ใส่อุปกรณ์/ปรับสเตต)
+//=          - ไฟล์ SQL: sql-files/companion_db.sql (ต้อง import ก่อน)
 //=============================================================
 //= โครงสร้าง label หลัก ๆ:
 //=   OnHireMenu      - เมนูจ้าง companion ใหม่ (เลือกสายอาชีพ 12 แบบ)
@@ -37,6 +43,8 @@
 //=   OnVacuumLoot    - ดูดของดรอปมาให้ผู้เล่น
 //=   OnNextExp       - คำนวณ EXP ถึงเลเวลถัดไป
 //=   OnLevelUp       - เมื่อเลเวลอัป: ประกาศ + คำนวณสเตตใหม่
+//=   OnCompLoad      - โหลด companion จาก MySQL (companion_db) ตอน login
+//=   OnCompSave      - บันทึก companion ลง MySQL (ทุกจุดที่ข้อมูลเปลี่ยน)
 //=   OnEquipMenu     - เมนูใส่อุปกรณ์ (อาวุธ โล่ หัว เกราะ) + ปรับสเตต
 //=   OnStatMenu      - ปรับสเตต (18 ค่า, 5 แต้ม/ครั้ง)
 //=   OnEquipSlot     - เลือกไอเทมจากกระเป๋ามาใส่
@@ -179,6 +187,7 @@ OnHireMenu:
 	mes "follow you and fight by";
 	mes "your side!";
 	addtimer 5000, "AI Companion::OnCompanionTick";
+	callsub OnCompSave;
 	close;
 
 //=== OnRelease: ปลด companion ==================================
@@ -213,6 +222,7 @@ OnRelease:
 		set #COMPANION_ARMOR[.@idx], 0;
 	}
 	atcommand "@save";
+	callsub OnCompSave;
 	mes "[AI Companion]";
 	mes "Your companion has been released.";
 	mes "Farewell, and stay safe!";
@@ -869,6 +879,7 @@ OnNPCKillEvent:
 		}
 		set #COMPANION_EXP[.@class], .@exp;
 		set #COMPANION_LEVEL[.@class], .@lvl;
+		callsub OnCompSave;
 		if (.@lvl > .@oldlvl)
 			callsub OnLevelUp, .@i;
 		break;
@@ -918,6 +929,82 @@ OnLevelUp:
 	set .@idx, getarg(0);
 	dispbottom "Your AI companion " + #COMPANION_NAME$[.@idx] + " reached level " + #COMPANION_LEVEL[#COMPANION_CLASS[.@idx]] + "!";
 	callsub OnScaleFull, .@idx;
+	return;
+
+//=== OnCompSave: บันทึก companion ลง MySQL (companion_db) ======
+// เขียนทุกช่อง (0..2) ลงตาราง companion_db ด้วย REPLACE INTO
+// (ถ้า (char_id,slot) มีอยู่แล้วจะแทนที่) ช่องที่ว่างจะ DELETE
+// ข้อมูลของช่องนั้นทิ้ง เรียกใช้ทุกจุดที่ข้อมูลเปลี่ยน
+// (จ้าง/ปลด/อัปเลเวล/ใส่อุปกรณ์/ปรับสเตต) เพื่อกันข้อมูลหาย
+OnCompSave:
+	set .@c, getcharid(3);
+	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
+		if (#COMPANION_CLASS[.@i]) {
+			set .@q$, "REPLACE INTO companion_db (char_id, slot, class, name, level, exp, weapon, shield, helm, armor, val_str, lvl_str, val_agi, lvl_agi, val_vit, lvl_vit, val_int, lvl_int, val_dex, lvl_dex, val_luk, lvl_luk, val_atk, lvl_atk, val_matk, lvl_matk, val_maxhp, lvl_maxhp, val_def, lvl_def, val_mdef, lvl_mdef, val_hit, lvl_hit, val_flee, lvl_flee, val_crit, lvl_crit, val_aspd, lvl_aspd, val_pdodge, lvl_pdodge, val_res, lvl_res, val_mres, lvl_mres) VALUES (" + .@c + "," + .@i + "," + #COMPANION_CLASS[.@i] + ",'" + escape_sql(#COMPANION_NAME$[.@i]) + "'," + #COMPANION_LEVEL[#COMPANION_CLASS[.@i]] + "," + #COMPANION_EXP[#COMPANION_CLASS[.@i]] + "," + #COMPANION_WEAPON[.@i] + "," + #COMPANION_SHIELD[.@i] + "," + #COMPANION_HELM[.@i] + "," + #COMPANION_ARMOR[.@i];
+			for (set .@s, 1; .@s <= 18; set .@s, .@s + 1) {
+				set .@q$, .@q$ + "," + #COMPANION_BS[.@i * 20 + .@s] + "," + #COMPANION_BSLV[.@i * 20 + .@s];
+			}
+			set .@q$, .@q$ + ")";
+			query_sql(.@q$);
+		} else {
+			query_sql("DELETE FROM companion_db WHERE char_id = " + .@c + " AND slot = " + .@i);
+		}
+	}
+	return;
+
+//=== OnCompLoad: โหลด companion จาก MySQL (companion_db) =======
+// เรียกตอน login (ก่อน OnSummon): อ่านทุกช่องจากตารางแล้วใส่กลับ
+// ลงตัวแปร #COMPANION_* ถ้าไม่มีแถวใน DB (ผู้เล่นเก่าที่ยังไม่ได้
+// migrate) จะเก็บข้อมูล # เดิมไว้แล้วเซฟครั้งแรกเองให้
+OnCompLoad:
+	set .@c, getcharid(3);
+	set .@migrate, 0;
+	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
+		set .@old_cls, #COMPANION_CLASS[.@i];
+		set .@cls, 0;
+		set .@nm$, "";
+		set .@lvl, 0;
+		set .@exp, 0;
+		set .@wpn, 0;
+		set .@shd, 0;
+		set .@hlm, 0;
+		set .@arm, 0;
+		query_sql("SELECT class, name, level, exp, weapon, shield, helm, armor, val_str, lvl_str, val_agi, lvl_agi, val_vit, lvl_vit, val_int, lvl_int, val_dex, lvl_dex, val_luk, lvl_luk, val_atk, lvl_atk, val_matk, lvl_matk, val_maxhp, lvl_maxhp, val_def, lvl_def, val_mdef, lvl_mdef, val_hit, lvl_hit, val_flee, lvl_flee, val_crit, lvl_crit, val_aspd, lvl_aspd, val_pdodge, lvl_pdodge, val_res, lvl_res, val_mres, lvl_mres FROM companion_db WHERE char_id = " + .@c + " AND slot = " + .@i, .@cls, .@nm$, .@lvl, .@exp, .@wpn, .@shd, .@hlm, .@arm, .@v1, .@l1, .@v2, .@l2, .@v3, .@l3, .@v4, .@l4, .@v5, .@l5, .@v6, .@l6, .@v7, .@l7, .@v8, .@l8, .@v9, .@l9, .@v10, .@l10, .@v11, .@l11, .@v12, .@l12, .@v13, .@l13, .@v14, .@l14, .@v15, .@l15, .@v16, .@l16, .@v17, .@l17, .@v18, .@l18);
+		if (.@cls) {
+			set #COMPANION_CLASS[.@i], .@cls;
+			set #COMPANION_NAME$[.@i], .@nm$;
+			set #COMPANION_GID[.@i], 0;
+			set #COMPANION_DEAD_TICK[.@i], 0;
+			set #COMPANION_SKILLCD[.@i], 0;
+			set #COMPANION_LEVEL[.@cls], .@lvl;
+			set #COMPANION_EXP[.@cls], .@exp;
+			set #COMPANION_WEAPON[.@i], .@wpn;
+			set #COMPANION_SHIELD[.@i], .@shd;
+			set #COMPANION_HELM[.@i], .@hlm;
+			set #COMPANION_ARMOR[.@i], .@arm;
+			set #COMPANION_BS[.@i * 20 + 1], .@v1;	set #COMPANION_BSLV[.@i * 20 + 1], .@l1;
+			set #COMPANION_BS[.@i * 20 + 2], .@v2;	set #COMPANION_BSLV[.@i * 20 + 2], .@l2;
+			set #COMPANION_BS[.@i * 20 + 3], .@v3;	set #COMPANION_BSLV[.@i * 20 + 3], .@l3;
+			set #COMPANION_BS[.@i * 20 + 4], .@v4;	set #COMPANION_BSLV[.@i * 20 + 4], .@l4;
+			set #COMPANION_BS[.@i * 20 + 5], .@v5;	set #COMPANION_BSLV[.@i * 20 + 5], .@l5;
+			set #COMPANION_BS[.@i * 20 + 6], .@v6;	set #COMPANION_BSLV[.@i * 20 + 6], .@l6;
+			set #COMPANION_BS[.@i * 20 + 7], .@v7;	set #COMPANION_BSLV[.@i * 20 + 7], .@l7;
+			set #COMPANION_BS[.@i * 20 + 8], .@v8;	set #COMPANION_BSLV[.@i * 20 + 8], .@l8;
+			set #COMPANION_BS[.@i * 20 + 9], .@v9;	set #COMPANION_BSLV[.@i * 20 + 9], .@l9;
+			set #COMPANION_BS[.@i * 20 + 10], .@v10;	set #COMPANION_BSLV[.@i * 20 + 10], .@l10;
+			set #COMPANION_BS[.@i * 20 + 11], .@v11;	set #COMPANION_BSLV[.@i * 20 + 11], .@l11;
+			set #COMPANION_BS[.@i * 20 + 12], .@v12;	set #COMPANION_BSLV[.@i * 20 + 12], .@l12;
+			set #COMPANION_BS[.@i * 20 + 13], .@v13;	set #COMPANION_BSLV[.@i * 20 + 13], .@l13;
+			set #COMPANION_BS[.@i * 20 + 14], .@v14;	set #COMPANION_BSLV[.@i * 20 + 14], .@l14;
+			set #COMPANION_BS[.@i * 20 + 15], .@v15;	set #COMPANION_BSLV[.@i * 20 + 15], .@l15;
+			set #COMPANION_BS[.@i * 20 + 16], .@v16;	set #COMPANION_BSLV[.@i * 20 + 16], .@l16;
+			set #COMPANION_BS[.@i * 20 + 17], .@v17;	set #COMPANION_BSLV[.@i * 20 + 17], .@l17;
+			set #COMPANION_BS[.@i * 20 + 18], .@v18;	set #COMPANION_BSLV[.@i * 20 + 18], .@l18;
+		} else if (.@old_cls)
+			set .@migrate, 1;
+	}
+	if (.@migrate)
+		callsub OnCompSave;
 	return;
 
 //=== OnEquipMenu: เมนูจัดการอุปกรณ์ของ companion =================
@@ -1028,6 +1115,7 @@ OnStatMenu:
 			set #COMPANION_BSLV[.@idx * 20 + .@s], 0;
 		}
 		callsub OnScaleFull, .@idx;
+		callsub OnCompSave;
 		mes "[AI Companion]";
 		mes "All custom stats reset.";
 		close;
@@ -1046,6 +1134,7 @@ OnStatMenu:
 		set #COMPANION_BSLV[.@idx * 20 + .@sel], .@lvl;
 	}
 	callsub OnScaleFull, .@idx;
+	callsub OnCompSave;
 	mes "[AI Companion]";
 	if (.@v > 0)
 		mes @bs_name$[.@sel] + " set to " + .@v + " at lv " + .@lvl + ".";
@@ -1113,6 +1202,7 @@ OnEquipSlot:
 	else
 		set #COMPANION_ARMOR[.@idx], .@item;
 	atcommand "@save";
+	callsub OnCompSave;
 	callsub OnEquipRefresh, .@idx;
 	mes "[AI Companion]";
 	mes #COMPANION_NAME$[.@idx] + " equipped";
@@ -1170,6 +1260,7 @@ OnUnequipMenu:
 		set #COMPANION_ARMOR[.@idx], 0;
 	}
 	atcommand "@save";
+	callsub OnCompSave;
 	callsub OnEquipRefresh, .@idx;
 	mes "[AI Companion]";
 	mes "Item returned to your";
@@ -1206,9 +1297,11 @@ OnEquipRefresh:
 	return;
 
 //=== OnPCLoginEvent: เมื่อผู้เล่น login ============================
-// เรียก companion ทั้ง 3 ช่องกลับมาที่แผนที่ปัจจุบัน (ล้าง GID เก่า
-// แล้ว OnSummon ใหม่) และเริ่มตัวจับเวลา 5 วิ (OnCompanionTick)
+// โหลดข้อมูลจาก MySQL (OnCompLoad) แล้วเรียก companion ทั้ง 3 ช่อง
+// กลับมาที่แผนที่ปัจจุบัน (ล้าง GID เก่า แล้ว OnSummon ใหม่)
+// และเริ่มตัวจับเวลา 5 วิ (OnCompanionTick)
 OnPCLoginEvent:
+	callsub OnCompLoad;
 	set @has_any, 0;
 	for (set .@i, 0; .@i < 3; set .@i, .@i + 1) {
 		if (#COMPANION_CLASS[.@i]) {
