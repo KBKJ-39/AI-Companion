@@ -6,7 +6,7 @@
 //= Each companion is stored in an array slot (0..2).
 //= Tune stat formulas inside OnScale / OnScaleFull.
 //=============================================================
-//= Version: 1.6
+//= Version: 1.7
 //= Changelog:
 //=   v1.0 - ระบบพื้นฐาน (จ้าง/ปลด, อุปกรณ์, สเตต 18 ค่า, EXP/เลเวล,
 //=          ติดตามผู้เล่น, ฟื้นคืนชีพ, บัฟสายอาชีพ, vacuum loot, ปลุกเมื่อตาย)
@@ -17,6 +17,10 @@
 //=   v1.5 - เร่งความเร็วร่ายสกิล (ชดเชย cast time ดั้งเดิมของสกิล)
 //=   v1.6 - แก้ dispbottom "reached level" ซ้ำทุกรอบ kill
 //=          (เรียก OnLevelUp เฉพาะเมื่ออัปเลเวลจริงเท่านั้น)
+//=   v1.7 - แก้ infinity loop จาก getmapunits: สแกนแบบรอบบริเวณ
+//=          (getareaunits) แทนสแกนทั้งแผนที่
+//=          - OnCompanionSkill: หาเป้าจาก mob ระยะ 9 ช่องรอบผู้เล่น
+//=          - OnVacuumLoot: ดูดของจากไอเทมระยะ 6 ช่องรอบจุดสังหาร
 //=============================================================
 //= โครงสร้าง label หลัก ๆ:
 //=   OnHireMenu      - เมนูจ้าง companion ใหม่ (เลือกสายอาชีพ 12 แบบ)
@@ -790,7 +794,7 @@ OnCompanionSkill:
 			set .@has_tg, 1;
 	}
 	if (!.@has_tg) {
-		set .@n, getmapunits(BL_MOB, @comp_map$, .@mob[0]);
+		set .@n, getareaunits(BL_MOB, @comp_map$, @comp_x - 9, @comp_y - 9, @comp_x + 9, @comp_y + 9, .@mob[0]);
 		for (set .@k, 0; .@k < .@n; set .@k, .@k + 1) {
 			if (.@mob[.@k] == .@gid)
 				continue;
@@ -882,7 +886,7 @@ OnVacuumLoot:
 	getmapxy(@v_map$, @v_px, @v_py, BL_PC);
 	if (@v_px == -1)
 		return;
-	set .@num, getmapunits(BL_ITEM, @v_map$, .@ig[0]);
+	set .@num, getareaunits(BL_ITEM, @v_map$, .@kx - 6, .@ky - 6, .@kx + 6, .@ky + 6, .@ig[0]);
 	for (set .@k, 0; .@k < .@num; set .@k, .@k + 1) {
 		set .@d[UMOB_X], -1;
 		set .@d[UMOB_Y], -1;
