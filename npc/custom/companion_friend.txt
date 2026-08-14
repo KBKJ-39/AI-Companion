@@ -6,6 +6,16 @@
 //= Each companion is stored in an array slot (0..2).
 //= Tune stat formulas inside OnScale / OnScaleFull.
 //=============================================================
+//= Version: 1.5
+//= Changelog:
+//=   v1.0 - ระบบพื้นฐาน (จ้าง/ปลด, อุปกรณ์, สเตต 18 ค่า, EXP/เลเวล,
+//=          ติดตามผู้เล่น, ฟื้นคืนชีพ, บัฟสายอาชีพ, vacuum loot, ปลุกเมื่อตาย)
+//=   v1.1 - เพิ่มคอมเมนต์ภาษาไทยอธิบายทุก label
+//=   v1.2 - เพิ่มระบบสกิลโจมตีประจำสาย 12 สาย + cooldown (OnCompanionSkill)
+//=   v1.3 - แก้ delete_timer mismatch: สกิล Ground ใช้ unitskillusepos
+//=   v1.4 - แก้ infinity loop ตอนอัปเลเวลทีเดียวหลายระดับ
+//=   v1.5 - เร่งความเร็วร่ายสกิล (ชดเชย cast time ดั้งเดิมของสกิล)
+//=============================================================
 //= โครงสร้าง label หลัก ๆ:
 //=   OnHireMenu      - เมนูจ้าง companion ใหม่ (เลือกสายอาชีพ 12 แบบ)
 //=   OnRelease       - ปลด companion และคืนอุปกรณ์
