@@ -143,6 +143,7 @@ OnHireMenu:
 	set #COMPANION_NAME$[.@idx], .@nm$;
 	set #COMPANION_GID[.@idx], 0;
 	set #COMPANION_DEAD_TICK[.@idx], 0;
+	set #COMPANION_SKILLCD[.@idx], 0;
 	if (!#COMPANION_LEVEL[.@cls])
 		set #COMPANION_LEVEL[.@cls], 1;
 	if (!#COMPANION_EXP[.@cls])
@@ -177,6 +178,7 @@ OnRelease:
 	set #COMPANION_CLASS[.@idx], 0;
 	set #COMPANION_GID[.@idx], 0;
 	set #COMPANION_DEAD_TICK[.@idx], 0;
+	set #COMPANION_SKILLCD[.@idx], 0;
 	set #COMPANION_NAME$[.@idx], "";
 	if (#COMPANION_WEAPON[.@idx]) {
 		getitem #COMPANION_WEAPON[.@idx], 1;
@@ -520,6 +522,7 @@ OnCompanionTick:
 				if (.@d[UMOB_MASTERAID] == getcharid(3) && .@d[UMOB_MAPID] >= 0) {
 					callsub OnScale, .@i;
 					callsub OnCompanionBuff, #COMPANION_CLASS[.@i], #COMPANION_GID[.@i];
+					callsub OnCompanionSkill, .@i, #COMPANION_CLASS[.@i], #COMPANION_GID[.@i];
 					getmapxy(@comp_map$, @comp_x, @comp_y, BL_PC);
 					if (@comp_x != -1 && @comp_y != -1) {
 						set @df, distance(@comp_x, @comp_y, .@d[UMOB_X], .@d[UMOB_Y]);
@@ -661,6 +664,125 @@ OnCompanionBuff:
 		sc_start .@self_sc, 60000, .@self_val, 10000, 0, .@gid;
 	if (.@mast_sc)
 		sc_start .@mast_sc, 60000, .@mast_val, 10000, 0;
+	return;
+
+//=== OnCompanionSkill: สกิลโจมตีประจำสายอาชีพ ===================
+// รับพารามิเตอร์: .@i (ช่อง), .@cls (คลาส), .@gid (GID companion)
+// 1) เช็ค cooldown 8 วิ ต่อช่อง (#COMPANION_SKILLCD)
+// 2) เลือกสกิลตามสายอาชีพจากตารางด้านล่าง (มีทั้งสกิลเดี่ยว/AoE)
+//    - สกิลแบบ self-AoE (Magnum/Meteor Assault/Grand Cross)
+//      ให้ร่ายใส่ตัวเองเพื่อโจมตีรอบตัว
+//    - สกิลแบบยิงเป้า/Ground จะยิงใส่ศัตรู (ตกลงที่ตำแหน่งศัตรู)
+// 3) หาเป้าหมาย: ใช้เป้าหมายที่ companion โจมตีอยู่ (UMOB_TARGETID)
+//    ถ้าไม่มี ให้ scan mob ระยะ 9 ช่องรอบผู้เล่น
+// 4) ร่ายด้วย unitskilluseid (cast 300ms, ยกเลิกไม่ได้)
+OnCompanionSkill:
+	set .@i, getarg(0);
+	set .@cls, getarg(1);
+	set .@gid, getarg(2);
+	if (!.@gid || !unitexists(.@gid))
+		return;
+	if (gettimetick(2) - #COMPANION_SKILLCD[.@i] < 8)
+		return;
+	set .@sk$, "";
+	set .@slv, 0;
+	set .@self, 0;
+	switch(.@cls) {
+	case 1799:
+		set .@sk$, "KN_BOWLINGBASH";
+		set .@slv, 10;
+		break;
+	case 1800:
+		set .@sk$, "ASC_METEORASSAULT";
+		set .@slv, 10;
+		set .@self, 1;
+		break;
+	case 1658:
+		set .@sk$, "AL_HOLYLIGHT";
+		set .@slv, 10;
+		break;
+	case 1636:
+		set .@sk$, "SM_MAGNUM";
+		set .@slv, 10;
+		set .@self, 1;
+		break;
+	case 1637:
+		set .@sk$, "PR_MAGNUS";
+		set .@slv, 10;
+		break;
+	case 1638:
+		set .@sk$, "GS_PIERCINGSHOT";
+		set .@slv, 10;
+		break;
+	case 1639:
+		set .@sk$, "WZ_STORMGUST";
+		set .@slv, 10;
+		break;
+	case 3226:
+		set .@sk$, "CR_SHIELDBOOMERANG";
+		set .@slv, 10;
+		break;
+	case 3227:
+		set .@sk$, "CR_GRANDCROSS";
+		set .@slv, 10;
+		set .@self, 1;
+		break;
+	case 3228:
+		set .@sk$, "WZ_METEOR";
+		set .@slv, 10;
+		break;
+	case 3229:
+		set .@sk$, "MO_FINGEROFFENSIVE";
+		set .@slv, 10;
+		break;
+	case 3230:
+		set .@sk$, "AS_GRIMTOOTH";
+		set .@slv, 10;
+		break;
+	}
+	if (!.@slv)
+		return;
+	getmapxy(@comp_map$, @comp_x, @comp_y, BL_PC);
+	if (@comp_x == -1)
+		return;
+	if (.@self) {
+		set #COMPANION_SKILLCD[.@i], gettimetick(2);
+		unitskilluseid .@gid, .@sk$, .@slv, .@gid, 300, 1, 0, 1;
+		return;
+	}
+	set .@d[UMOB_X], -1;
+	set .@d[UMOB_Y], -1;
+	set .@d[UMOB_TARGETID], 0;
+	getunitdata(.@gid, .@d);
+	set .@tg, .@d[UMOB_TARGETID];
+	set .@has_tg, 0;
+	if (.@tg && unitexists(.@tg)) {
+		set .@d2[UMOB_MAPID], -1;
+		getunitdata(.@tg, .@d2);
+		if (.@d2[UMOB_MAPID] == mapname2id(@comp_map$))
+			set .@has_tg, 1;
+	}
+	if (!.@has_tg) {
+		set .@n, getmapunits(BL_MOB, @comp_map$, .@mob[0]);
+		for (set .@k, 0; .@k < .@n; set .@k, .@k + 1) {
+			if (.@mob[.@k] == .@gid)
+				continue;
+			set .@d2[UMOB_X], -1;
+			set .@d2[UMOB_Y], -1;
+			getunitdata(.@mob[.@k], .@d2);
+			if (.@d2[UMOB_X] == -1)
+				continue;
+			set .@dd, distance(.@d2[UMOB_X], .@d2[UMOB_Y], @comp_x, @comp_y);
+			if (.@dd <= 9) {
+				set .@tg, .@mob[.@k];
+				break;
+			}
+		}
+	}
+	if (!.@tg)
+		return;
+	set #COMPANION_SKILLCD[.@i], gettimetick(2);
+	unitskilluseid .@gid, .@sk$, .@slv, .@tg, 300, 1, 0, 1;
 	return;
 
 //=== OnNPCKillEvent: เมื่อ companion ฆ่ามอนสเตอร์ ================
