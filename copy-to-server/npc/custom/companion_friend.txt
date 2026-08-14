@@ -6,7 +6,7 @@
 //= Each companion is stored in an array slot (0..2).
 //= Tune stat formulas inside OnScale / OnScaleFull.
 //=============================================================
-//= Version: 1.5
+//= Version: 1.6
 //= Changelog:
 //=   v1.0 - ระบบพื้นฐาน (จ้าง/ปลด, อุปกรณ์, สเตต 18 ค่า, EXP/เลเวล,
 //=          ติดตามผู้เล่น, ฟื้นคืนชีพ, บัฟสายอาชีพ, vacuum loot, ปลุกเมื่อตาย)
@@ -15,6 +15,8 @@
 //=   v1.3 - แก้ delete_timer mismatch: สกิล Ground ใช้ unitskillusepos
 //=   v1.4 - แก้ infinity loop ตอนอัปเลเวลทีเดียวหลายระดับ
 //=   v1.5 - เร่งความเร็วร่ายสกิล (ชดเชย cast time ดั้งเดิมของสกิล)
+//=   v1.6 - แก้ dispbottom "reached level" ซ้ำทุกรอบ kill
+//=          (เรียก OnLevelUp เฉพาะเมื่ออัปเลเวลจริงเท่านั้น)
 //=============================================================
 //= โครงสร้าง label หลัก ๆ:
 //=   OnHireMenu      - เมนูจ้าง companion ใหม่ (เลือกสายอาชีพ 12 แบบ)
@@ -849,7 +851,8 @@ OnNPCKillEvent:
 		if (@moblv < 1)
 			set @moblv, 1;
 		set .@class, #COMPANION_CLASS[.@i];
-		set .@lvl, #COMPANION_LEVEL[.@class];
+		set .@oldlvl, #COMPANION_LEVEL[.@class];
+		set .@lvl, .@oldlvl;
 		set .@exp, #COMPANION_EXP[.@class] + @moblv * 15 + 50;
 		callsub OnNextExp, .@lvl;
 		while (.@lvl < 999 && .@exp >= @next_exp) {
@@ -862,7 +865,8 @@ OnNPCKillEvent:
 		}
 		set #COMPANION_EXP[.@class], .@exp;
 		set #COMPANION_LEVEL[.@class], .@lvl;
-		callsub OnLevelUp, .@i;
+		if (.@lvl > .@oldlvl)
+			callsub OnLevelUp, .@i;
 		break;
 	}
 	if (@comp_killed)
