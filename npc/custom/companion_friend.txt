@@ -830,14 +830,21 @@ OnNPCKillEvent:
 		set @moblv, getmonsterinfo(killedrid, MOB_LV);
 		if (@moblv < 1)
 			set @moblv, 1;
-		set #COMPANION_EXP[#COMPANION_CLASS[.@i]], #COMPANION_EXP[#COMPANION_CLASS[.@i]] + @moblv * 15 + 50;
-		callsub OnNextExp, #COMPANION_LEVEL[#COMPANION_CLASS[.@i]];
-		while (#COMPANION_LEVEL[#COMPANION_CLASS[.@i]] < 999 && #COMPANION_EXP[#COMPANION_CLASS[.@i]] >= @next_exp) {
-			set #COMPANION_EXP[#COMPANION_CLASS[.@i]], #COMPANION_EXP[#COMPANION_CLASS[.@i]] - @next_exp;
-			set #COMPANION_LEVEL[#COMPANION_CLASS[.@i]], #COMPANION_LEVEL[#COMPANION_CLASS[.@i]] + 1;
-			callsub OnLevelUp, .@i;
-			callsub OnNextExp, #COMPANION_LEVEL[#COMPANION_CLASS[.@i]];
+		set .@class, #COMPANION_CLASS[.@i];
+		set .@lvl, #COMPANION_LEVEL[.@class];
+		set .@exp, #COMPANION_EXP[.@class] + @moblv * 15 + 50;
+		callsub OnNextExp, .@lvl;
+		while (.@lvl < 999 && .@exp >= @next_exp) {
+			set .@exp, .@exp - @next_exp;
+			set .@lvl, .@lvl + 1;
+			if (.@lvl <= BaseLevel)
+				set @next_exp, getbaseexp_ratio(100, .@lvl);
+			else
+				set @next_exp, .@lvl * .@lvl * 5 + .@lvl * 100;
 		}
+		set #COMPANION_EXP[.@class], .@exp;
+		set #COMPANION_LEVEL[.@class], .@lvl;
+		callsub OnLevelUp, .@i;
 		break;
 	}
 	if (@comp_killed)
