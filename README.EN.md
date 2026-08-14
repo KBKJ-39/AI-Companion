@@ -3,13 +3,19 @@
 AI Companion hire system for rAthena, with a `@companion` command (alias `@cp`)
 that opens the NPC menu from anywhere on the map (no need to walk to the NPC).
 
+**Latest version:** v1.8 — companion data is stored in **MySQL** (table `companion_db`),
+so you can adjust stats directly from the database, just like editing player stats.
+
 ## Features
 
-- Hire up to 3 AI soldiers (in-game monster characters such as Seyren, Eremes, Margaretha, Kathryne, etc.)
+- Hire up to 3 AI soldiers (12 classes: Seyren, Eremes, Cenia, Howard, Margaretha, Cecil, Kathryne, Randel, Flamel, Celia, Chen, Gertie)
 - Companions have their own level (max 999), gain EXP from killing monsters, and auto-revive after death
-- Automatically buffs the player (Assumptio, Kyrie, Blessing, Magnificat, etc., depending on the class)
-- Equip/unequip gear on companions (weapon, shield, headgear, armor) and customize stats per level
+- 12 class-specific attack skills (Bowling Bash, Meteor Assault, Magnus, Storm Gust, Grand Cross, Meteor Storm, etc.) used automatically with cooldown
+- Automatically buffs the player per class (Assumptio, Kyrie, Blessing, Magnificat, etc.)
+- Equip/unequip gear on companions (weapon, shield, headgear, armor) + adjust 18 stats (STR..MRES) that scale with level
 - Automatically pulls nearby ground items to the player
+- Priest companion revives the player when they die
+- **Data stored in MySQL** via `query_sql` — edit stats/level/EXP straight from the database
 - `@companion` / `@cp` works from anywhere (uses the fake-NPC mechanism like item scripts, so no `npc_checknear` issues)
 
 ## Package Contents
@@ -25,71 +31,84 @@ AI-Companion/
 │   ├── conf/atcommands.yml          # Full file, already edited
 │   ├── npc/scripts_custom.conf      # Full file, script load line already added
 │   ├── npc/custom/companion_friend.txt
+│   ├── sql-files/companion_db.sql   # MySQL table (must be imported first)
 │   └── src/map/atcommand.cpp        # Full file, command already added
-└── npc/
-    └── custom/
-        └── companion_friend.txt     # AI Companion NPC script
+├── npc/
+│   └── custom/
+│       └── companion_friend.txt     # AI Companion NPC script
+└── sql-files/
+    └── companion_db.sql             # MySQL table that stores companion data
 ```
 
 ## Requirements
 
-- A current rAthena build (tested on `Release` / Windows MSVC + using `<npc/scripts_custom.conf>`)
-- This guide assumes the server root is `<server>`
-- **Version note:** the `copy-to-server/` files are full files built against one specific rAthena revision. If your target server is a different revision, use the `patches/` method instead (it merges cleanly into your own code).
+- Current rAthena (tested on `Release` / Windows MSVC, using `<npc/scripts_custom.conf>`)
+- File paths below assume the server root is `<server>`
+- **Package version:** the `copy-to-server` method works only on the same rAthena version the package was built for. If your server is a different version, use `patches/` instead (it merges into your code).
+- A working MySQL instance for rAthena (the script reads/writes the `companion_db` table in the game database).
 
-## Supported Server Versions
+### Supported Server Versions
 
-**Tested on:** rAthena `master` commit `2fe6ab3` (Aug 8, 2026) · Renewal · PACKETVER `20250716` · Windows MSVC (Release)
+**Tested with:** rAthena `master` · Renewal · Windows MSVC (Release)
 
-**Recommended minimum:** rAthena `master` from mid-2024 onward (based on the script APIs used).
+**Recommended minimum:** rAthena `master` from mid-2024 onward (based on the APIs used).
 
-| API used | Added in rAthena | Why |
+| API used | Available since | Reason |
 |---|---|---|
-| `summon`, `unitexists`, `getmonsterinfo`, `getmapunits`, `getinventorylist`, `getiteminfo`, `sc_start` | Very old (pre-2015) | Core features |
-| `getunitdata` / `setunitdata` + `UMOB_*` | 2015 (commit `2cee5b6`) | Control companion stats |
-| `UMOB_MATKMIN` / `UMOB_MATKMAX` | 2019 (PR #3968) | Set MATK in `OnScale` |
-| `UMOB_RES` / `UMOB_MRES` | 2022 (PR #6857) | Set RES/MRES in `OnScale` |
-| `getbaseexp_ratio` | 2022 (EP 17.1 quests) | Compute EXP up to level 999 |
+| `summon`, `unitexists`, `getmonsterinfo`, `getareaunits`, `getinventorylist`, `getiteminfo`, `sc_start` | very old (before 2015) | basic features |
+| `getunitdata` / `setunitdata` + `UMOB_*` | 2015 (commit `2cee5b6`) | control companion stats |
+| `UMOB_MATKMIN` / `UMOB_MATKMAX` | 2019 (PR #3968) | set MATK in `OnScale` |
+| `UMOB_RES` / `UMOB_MRES` | 2022 (PR #6857) | set RES/MRES in `OnScale` |
+| `getbaseexp_ratio` | 2022 (EP 17.1 quests) | EXP calculation up to level 999 |
+| `query_sql` | very old | read/write the `companion_db` table |
+
+> Note: v1.7+ uses `getareaunits` instead of `getmapunits` to scan only the local area (fixes the infinity loop). If your server is too old to have `getareaunits`, fall back to `getmapunits` and adjust the loop range yourself.
 
 **If your server is older than the minimum:**
-- `UMOB_RES` / `UMOB_MRES` missing → error when loading/running `OnScale` → **delete the 2 lines** in the `OnScale` label using `#COMPANION_BS[.@idx * 20 + 17]` and `+ 18` (plus `.@s == 17` / `.@s == 18` in `OnStatMenu`). It still works, but RES/MRES cannot be customized.
-- `UMOB_MATKMIN` / `UMOB_MATKMAX` missing → mage-class companions get wrong damage → in `OnScale`, fall back to `UMOB_ATKMIN/ATKMAX` only.
-- The `patches/` method always merges into your own revision, but you must adapt the code to the APIs that exist there.
-
-**Quick version check from git:**
-
-```bash
-git rev-parse HEAD              # e.g. 2fe6ab3dc4d830b11d93fb44c3b48436571890bd
-git log -1 --format="%cs %s"    # e.g. 2026-08-04 Fixed message length calculations (#10073)
-```
+- No `UMOB_RES` / `UMOB_MRES` → error when loading `OnScale` → **remove the 2 lines** in `OnScale` that use `#COMPANION_BS[.@idx * 20 + 17]` and `+ 18` (and the `.@s == 17` / `.@s == 18` checks in `OnStatMenu`). You lose RES/MRES adjustment but everything else works.
+- No `UMOB_MATKMIN` / `UMOB_MATKMAX` → mage stats are wrong → change `OnScale` to use only `UMOB_ATKMIN/ATKMAX`.
+- The `patches/` method always merges, but you must adjust the code to compile against the APIs available in your version.
 
 ---
 
 ## Installation
 
-### Method A: Copy & Paste (fastest)
+### Step 0: import the MySQL table (new since v1.8)
 
-1. Copy the whole `copy-to-server/` folder over your server root (`<server>`), keeping the inner structure:
+Create the `companion_db` table in the game database (run once):
+
+```bash
+mysql -u ragnarok -p ragnarok < sql-files/companion_db.sql
+```
+
+Or import `companion_db.sql` via phpMyAdmin / HeidiSQL.
+
+> The script will not work without this table — `OnCompLoad`/`OnCompSave` use `query_sql` on every change.
+
+### Method A: copy-paste (fastest)
+
+1. Copy the whole `copy-to-server/` folder over the server root (`<server>`), keeping the same layout:
 
    ```
    copy-to-server/conf/atcommands.yml        ->  <server>/conf/atcommands.yml
    copy-to-server/npc/scripts_custom.conf    ->  <server>/npc/scripts_custom.conf
    copy-to-server/npc/custom/companion_friend.txt -> <server>/npc/custom/companion_friend.txt
+   copy-to-server/sql-files/companion_db.sql ->  <server>/sql-files/companion_db.sql
    copy-to-server/src/map/atcommand.cpp      ->  <server>/src/map/atcommand.cpp
    ```
 
-   > Note: the files in `copy-to-server/` are full files (already edited) — use them only if your target server runs the same rAthena revision as this package and you have not heavily customized `atcommand.cpp` / `atcommands.yml` / `scripts_custom.conf`.
-2. Then continue with the **shared step (recompile)** and the **final step (reloadscript)** below.
+   > Note: files in `copy-to-server/` are full files (already edited) — only valid if your server is the same rAthena version as the package and you haven't specially modified `atcommand.cpp` / `atcommands.yml` / `scripts_custom.conf`.
+2. Continue with **common step (recompile)** and **final step (reloadscript)**.
 
-### Method B: Patch the map-server source
+### Method B: patch map-server code
 
-From the rAthena root, apply the patch:
+From the rAthena root, use git apply:
 
 ```bash
 git apply patches/companion-all.patch
 ```
 
-No git? Apply it manually (3 changes):
+If git is not available or you prefer to do it manually, edit 2 places:
 
 **1. `src/map/atcommand.cpp`**
 
@@ -120,7 +139,7 @@ ACMD_FUNC(companion){
 }
 ```
 
-Register it in the command table (`atcommand_basecommands`, after `ACMD_DEF(help)`):
+Register it in the command table (`atcommand_basecommands`, right after `ACMD_DEF(help)`):
 
 ```cpp
 		ACMD_DEF(help),
@@ -129,7 +148,7 @@ Register it in the command table (`atcommand_basecommands`, after `ACMD_DEF(help
 
 **2. `conf/atcommands.yml`**
 
-Add an entry in `Body:` after the `help` block:
+Add an entry in `Body:` right after the `help` block:
 
 ```yaml
   - Command: companion
@@ -139,38 +158,38 @@ Add an entry in `Body:` after the `help` block:
       Opens the AI Companion menu (hire, release, check, equip your AI companions).
 ```
 
-> Note: Do not use `ACMD_DEF2` to add the alias — atcommand aliases are defined exclusively through `atcommands.yml`.
+> Note: do not use `ACMD_DEF2` to add the alias — atcommand aliases are defined via `atcommands.yml` only.
 
-**3. Install the NPC script**
+**3. Place the NPC script**
 
-Copy the script file to:
+Copy the script to:
 
 ```
 <server>/npc/custom/companion_friend.txt
 ```
 
-Then open `<server>/npc/scripts_custom.conf` and add this line (in the `Basic Scripts` section):
+Then open `<server>/npc/scripts_custom.conf` and add this line (in `Basic Scripts`):
 
 ```
 npc: npc/custom/companion_friend.txt
 ```
 
-### Shared step (both methods): Recompile
+### Common step (both A and B): recompile
 
-- Windows: rebuild with MSVC (same as your normal rAthena build), then replace the running `map-server.exe`
+- Windows: rebuild with MSVC (same as a normal rAthena build) then replace the running `map-server.exe`
 - Linux: `make` / `./configure && make map-server`
 
-**Warning:** Stop the map-server before replacing the exe (Windows will lock the file otherwise).
+**Warning:** stop map-server before replacing the exe (Windows locks the file otherwise).
 
-### Final step: Reload scripts (no restart needed)
+### Final step: reload scripts (no restart needed)
 
-From the map-server console:
+On the map-server console:
 
 ```
 reloadscript
 ```
 
-Or restart the whole server set.
+Or restart the whole server.
 
 ---
 
@@ -178,32 +197,72 @@ Or restart the whole server set.
 
 | Command | Effect |
 |---|---|
-| `@companion` or `@cp` | Opens the AI Companion menu (works anywhere, no need to reach the NPC) |
-| Walk to the `AI Companion` NPC at Prontera 156,193 | Opens the menu normally |
+| `@companion` or `@cp` | Opens the AI Companion menu (works from anywhere) |
+| Talk to the `AI Companion` NPC at Prontera 156,193 | Opens the menu normally |
 
-Menu options: hire a companion / release / check status / equip gear / adjust stats.
+Menu options: hire a companion / release / check status / equip / adjust stats.
+
+## Managing Data via MySQL
+
+All data is stored in the `companion_db` table (1 row per `char_id` + `slot`):
+
+| Column | Meaning |
+|---|---|
+| `char_id`, `slot` | player + slot (0..2) — primary key |
+| `class`, `name` | class + name |
+| `level`, `exp` | level (max 999) + EXP |
+| `weapon`, `shield`, `helm`, `armor` | equipped items (item IDs) |
+| `val_*` / `lvl_*` | 18 stats (STR..MRES) + the level they were set at |
+
+**Edit stats directly from the DB** (takes effect on that player's next login):
+
+```sql
+-- Set STR = 500 (grown from level 1) for companion slot 0 of char_id 150
+UPDATE companion_db SET val_str = 500, lvl_str = 1 WHERE char_id = 150 AND slot = 0;
+```
+
+> The system loads from this table on login (`OnCompLoad`) and saves on every data change
+> (`OnCompSave` — hire/release/level-up/equip/stat adjust). Existing players are migrated
+> into the table automatically on their first login.
 
 ## Troubleshooting
 
-- **`npc_scriptcont: failed npc_checknear test.`** — Happens when the script is run with `nd->id` (the real NPC) while the player is far from the NPC; the distance check fails, the dialog gets stuck, and this also causes the `event queue is full` warning. Fix: run it through `fake_nd->id` (as the patch above does) so rAthena skips the distance check, same as item scripts.
-- **`npc_event: player's event queue is full`** — If you still see it after installing the patch, make sure you are running the freshly compiled exe (this warning is a side effect of a stuck dialog; once dialogs open/close normally it disappears on its own).
-- **Companion monsters (1799, 1800, 3226...) must exist in your server's database** — if the IDs differ in your rAthena version, edit the `set .@cls` values in the `OnHireMenu` label.
+- **`npc_scriptcont: failed npc_checknear test.`** — happens when the script runs with `nd->id` (the real NPC) and the player is too far away, so the distance check fails and the dialog hangs; also causes the `event queue is full` warning. Fix: run via `fake_nd->id` (see patch above) so rAthena skips the distance check like an item script.
+- **`npc_event: player's event queue is full`** — if you still see it after installing the patch, check that you're using the freshly compiled exe (this warning is a result of the stuck dialog; it goes away once dialogs open/close normally).
+- **`script:query_sql: ... Unknown table 'companion_db'`** — you forgot to import `companion_db.sql` (step 0).
+- **`script:run_script_main: infinity loop`** — make sure the script is v1.7+ (scans with `getareaunits`); the old `getmapunits` iterated the whole map and caused this.
+- **The companion mobs (1799, 1800, 3226...) must exist in your server's DB.** If the IDs differ in your version, change the `set .@cls` values in `OnHireMenu`.
+
+## Version History
+
+| Version | Content |
+|---|---|
+| v1.0 | Base system (hire/release, equipment, 18 stats, EXP/level, follow, revive, class buffs, vacuum loot, wake on death) |
+| v1.1 | Thai comments explaining every label |
+| v1.2 | 12 class attack skills + cooldown (`OnCompanionSkill`) |
+| v1.3 | Fixed `delete_timer` mismatch: ground skills use `unitskillusepos` |
+| v1.4 | Fixed infinity loop when leveling up multiple levels at once |
+| v1.5 | Faster skill casts (offset native skill cast time) |
+| v1.6 | Fixed "reached level" `dispbottom` spam on every kill |
+| v1.7 | Fixed infinity loop from `getmapunits`: scan local area with `getareaunits` |
+| v1.8 | **Store data in MySQL** (`companion_db`) via `query_sql` + auto-migrate old players |
 
 ## Customization Ideas
 
 - Max companions: change `3` in `OnHireMenu` and the `0..2` loops in every label
-- Stat/HP formulas: edit the `OnScale` / `OnScaleFull` labels
-- Buff types: edit the `OnCompanionBuff` label
+- Stat/HP formulas: edit `OnScale` / `OnScaleFull`
+- Buffs: edit `OnCompanionBuff`
+- Attack skills/cooldown: edit `OnCompanionSkill`
 
 ---
 
-## Idea & Development Credits
+## Credits
 
-- **System idea:** KBKJ (creator of the AI Companion concept, since the author does not know how to write scripts)
-- **Developer / code author:** AI Opencode — Model **Big Pickle** (free version) — responsible for everything: script design, bug fixes, the install package, and this README.
+- **Idea:** KBKJ (all AI Companion system ideas; cannot write scripts)
+- **Developer / coder:** AI Opencode — Model **Big Pickle** (free tier) — responsible for everything: script design, bug fixes, install package, and this README
 
 ---
 
 ## License
 
-Free for personal and commercial use, under the [rAthena License](https://github.com/rathena/rathena/blob/master/COPYING)
+Free for personal and commercial use under the [rAthena License](https://github.com/rathena/rathena/blob/master/COPYING)
