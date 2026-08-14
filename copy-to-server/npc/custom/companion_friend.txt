@@ -675,10 +675,14 @@ OnCompanionBuff:
 //    - สกิลแบบยิงเป้า/Ground จะยิงใส่ศัตรู (ตกลงที่ตำแหน่งศัตรู)
 // 3) หาเป้าหมาย: ใช้เป้าหมายที่ companion โจมตีอยู่ (UMOB_TARGETID)
 //    ถ้าไม่มี ให้ scan mob ระยะ 9 ช่องรอบผู้เล่น
-// 4) ร่ายด้วย unitskilluseid (cast 300ms, ยกเลิกไม่ได้)
+// 4) ร่ายด้วย unitskilluseid / unitskillusepos (ยกเลิกไม่ได้)
 //    - สกิลเป้าแบบ Ground (Magnus/Storm Gust/Meteor) ต้องใช้ unitskillusepos
 //      ยิงที่ตำแหน่งเป้า (หน่วยเซิร์ฟเวอร์ลง timer เป็น skill_castend_pos
 //      มิฉะนั้นตอน cast ถูกขัดจะ error "delete_timer function mismatch")
+// 5) ค่าชดเชย cast time (.@cc): เวลาร่ายจริง = .@cc x 1000ms + cast time
+//    ดั้งเดิมของสกิล (ยิงผ่าน unitskill* เสมอ) จึงใส่ค่าติดลบสำหรับสกิล
+//    ที่มี cast time มาก (Magnus 10s / Storm Gust 6.3s / Grand Cross 1s)
+//    เพื่อให้ร่ายไว ไม่ยืนค้าง
 OnCompanionSkill:
 	set .@i, getarg(0);
 	set .@cls, getarg(1);
@@ -691,6 +695,7 @@ OnCompanionSkill:
 	set .@slv, 0;
 	set .@self, 0;
 	set .@ground, 0;
+	set .@cc, 0;
 	switch(.@cls) {
 	case 1799:
 		set .@sk$, "KN_BOWLINGBASH";
@@ -714,6 +719,7 @@ OnCompanionSkill:
 		set .@sk$, "PR_MAGNUS";
 		set .@slv, 10;
 		set .@ground, 1;
+		set .@cc, -9;
 		break;
 	case 1638:
 		set .@sk$, "GS_PIERCINGSHOT";
@@ -723,6 +729,7 @@ OnCompanionSkill:
 		set .@sk$, "WZ_STORMGUST";
 		set .@slv, 10;
 		set .@ground, 1;
+		set .@cc, -6;
 		break;
 	case 3226:
 		set .@sk$, "CR_SHIELDBOOMERANG";
@@ -732,6 +739,7 @@ OnCompanionSkill:
 		set .@sk$, "CR_GRANDCROSS";
 		set .@slv, 10;
 		set .@self, 1;
+		set .@cc, -1;
 		break;
 	case 3228:
 		set .@sk$, "WZ_METEOR";
@@ -754,7 +762,7 @@ OnCompanionSkill:
 		return;
 	if (.@self) {
 		set #COMPANION_SKILLCD[.@i], gettimetick(2);
-		unitskilluseid .@gid, .@sk$, .@slv, .@gid, 300, 1, 0, 1;
+		unitskilluseid .@gid, .@sk$, .@slv, .@gid, .@cc, 1, 0, 1;
 		return;
 	}
 	set .@d[UMOB_X], -1;
@@ -793,10 +801,10 @@ OnCompanionSkill:
 	getunitdata(.@tg, .@d2);
 	set #COMPANION_SKILLCD[.@i], gettimetick(2);
 	if (.@ground) {
-		unitskillusepos .@gid, .@sk$, .@slv, .@d2[UMOB_X], .@d2[UMOB_Y], 300, 1, 0, 1;
+		unitskillusepos .@gid, .@sk$, .@slv, .@d2[UMOB_X], .@d2[UMOB_Y], .@cc, 1, 0, 1;
 		return;
 	}
-	unitskilluseid .@gid, .@sk$, .@slv, .@tg, 300, 1, 0, 1;
+	unitskilluseid .@gid, .@sk$, .@slv, .@tg, .@cc, 1, 0, 1;
 	return;
 
 //=== OnNPCKillEvent: เมื่อ companion ฆ่ามอนสเตอร์ ================
